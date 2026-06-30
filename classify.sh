@@ -4,7 +4,7 @@
 #SBATCH --error=logs_SALIENCY_GUIDED/mps_%j.err
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=4
+#SBATCH --cpus-per-task=2
 #SBATCH --gres=mps:a100:2
 #SBATCH --mem=4G
 #SBATCH --time=72:00:00
