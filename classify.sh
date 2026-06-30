@@ -50,3 +50,29 @@ mkdir -p "$CUDA_MPS_PIPE_DIRECTORY" "$CUDA_MPS_LOG_DIRECTORY"
 
 export CUDA_VISIBLE_DEVICES=$BEST_GPU
 
+# =========================================================
+# RUN CLASSIFICATION
+# =========================================================
+MODEL_NAME=${MODEL_NAME:-"clip"}
+PRETRAINED=${PRETRAINED:-"ViT-B/32"}
+DATASET_NAME=${DATASET_NAME:-"imagenet"}
+BATCH_SIZE=${BATCH_SIZE:-64}
+CLASSIFICATION_METHOD=${CLASSIFICATION_METHOD:-"simple"}
+RIGHT_DIR=${RIGHT_DIR:-"correct_classified_samples"}
+
+echo "Running classify.py with:"
+echo "  model_name=$MODEL_NAME"
+echo "  pretrained=$PRETRAINED"
+echo "  dataset_name=$DATASET_NAME"
+echo "  batch_size=$BATCH_SIZE"
+echo "  classification_method=$CLASSIFICATION_METHOD"
+echo "  right_dir=$RIGHT_DIR"
+
+python classify.py \
+    --model_name "$MODEL_NAME" \
+    --pretrained "$PRETRAINED" \
+    --dataset_name "$DATASET_NAME" \
+    --batch_size "$BATCH_SIZE" \
+    --classification_method "$CLASSIFICATION_METHOD" \
+    --right_dir "$RIGHT_DIR"
+
