@@ -400,9 +400,11 @@ def mask_clip(txt_feats, v_final, k_out, map_size):
 
 
 def _normalize_map(heatmap: torch.Tensor, eps: float = 1e-8) -> torch.Tensor:
+    heatmap = torch.nan_to_num(heatmap, nan=0.0, posinf=0.0, neginf=0.0)
     heatmap = heatmap - heatmap.min()
     denom = heatmap.max().clamp(min=eps)
-    return heatmap / denom
+    heatmap = heatmap / denom
+    return torch.nan_to_num(heatmap, nan=0.0, posinf=1.0, neginf=0.0)
 
 
 def _resize_to_image(heatmap: torch.Tensor, image_size: Tuple[int, int]) -> torch.Tensor:
@@ -410,6 +412,31 @@ def _resize_to_image(heatmap: torch.Tensor, image_size: Tuple[int, int]) -> torc
     heat = heatmap[None, None, ...]
     heat = F.interpolate(heat, size=(h, w), mode="bilinear", align_corners=False)[0, 0]
     return _normalize_map(heat)
+
+
+def _resize_raw_to_image(heatmap: torch.Tensor, image_size: Tuple[int, int]) -> torch.Tensor:
+    w, h = image_size
+    heat = heatmap[None, None, ...]
+    return F.interpolate(heat, size=(h, w), mode="bilinear", align_corners=False)[0, 0]
+
+
+def _normalize_map_percentile(heatmap: torch.Tensor, q_low: float = 0.01, q_high: float = 0.99, eps: float = 1e-8) -> torch.Tensor:
+    heatmap = torch.nan_to_num(heatmap, nan=0.0, posinf=0.0, neginf=0.0)
+    flat = heatmap.flatten()
+    low = torch.quantile(flat, q_low)
+    high = torch.quantile(flat, q_high)
+    heatmap = (heatmap - low) / (high - low + eps)
+    heatmap = heatmap.clamp(0.0, 1.0)
+    return torch.nan_to_num(heatmap, nan=0.0, posinf=1.0, neginf=0.0)
+
+
+def _smooth_map(heatmap: torch.Tensor, kernel_size: int = 5) -> torch.Tensor:
+    if kernel_size <= 1:
+        return heatmap
+    pad = kernel_size // 2
+    x = heatmap[None, None, ...]
+    x = F.avg_pool2d(x, kernel_size=kernel_size, stride=1, padding=pad)
+    return x[0, 0]
 
 
 def _jet_colormap(hm: np.ndarray) -> np.ndarray:
@@ -422,11 +449,20 @@ def _jet_colormap(hm: np.ndarray) -> np.ndarray:
 
 def overlay_heatmap(image: Image.Image, saliency_map: np.ndarray, alpha: float = 0.45, channel: str = "jet") -> Image.Image:
     img = np.asarray(image.convert("RGB")).astype(np.float32)
-    hm = np.clip(saliency_map, 0.0, 1.0)
+
+    if isinstance(saliency_map, torch.Tensor):
+        hm = saliency_map.detach().float().cpu().numpy()
+    else:
+        hm = np.asarray(saliency_map)
+
+    hm = np.nan_to_num(hm, nan=0.0, posinf=1.0, neginf=0.0)
+    hm = hm.astype(np.float32, copy=False)
+    hm = np.clip(hm, 0.0, 1.0)
     if channel.lower() != "jet":
         raise ValueError(f"Unsupported channel: {channel}. Only 'jet' is supported.")
     color = (_jet_colormap(hm) * 255.0).astype(np.float32)
-    out = np.clip((1 - alpha) * img + alpha * color, 0, 255).astype(np.uint8)
+    out = np.clip((1 - alpha) * img + alpha * color, 0, 255)
+    out = np.nan_to_num(out, nan=0.0, posinf=255.0, neginf=0.0).astype(np.uint8)
     return Image.fromarray(out)
 
 
@@ -519,7 +555,10 @@ class CLIPSurgerySaliency(CLIPSaliencyBase):
         maps: Dict[str, np.ndarray] = {}
         for i, text in enumerate(texts):
             emap = sim_map[0, :, :, i]
-            emap = _resize_to_image(emap, pil.size)
+            emap = _resize_raw_to_image(emap, pil.size)
+            emap = _normalize_map_percentile(emap, q_low=0.01, q_high=0.99)
+            emap = _smooth_map(emap, kernel_size=5)
+            emap = _normalize_map(emap)
             maps[text] = emap.detach().cpu().numpy()
         return maps
 

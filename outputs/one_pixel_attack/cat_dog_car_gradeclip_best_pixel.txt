@@ -1,1 +1,0 @@
-{'x': 594, 'y': 264, 'rgb': [149, 231, 255], 'objective': 0.0017077922821044922, 'method': 'gradeclip', 'model': 'ViT-B/16', 'texts': ['dog', 'car']}

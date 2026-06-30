@@ -81,9 +81,9 @@ def main() -> None:
     output_root.mkdir(parents=True, exist_ok=True)
 
     texts = [
-        "dog",
-        'cat',
-        "car",      
+        "a photo of a dog",
+        "a photo of a cat",
+        "a photo of a car",
     ]
     methods = ["maskclip", "clipsurgery", "gradeclip"]
 
