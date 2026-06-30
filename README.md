@@ -67,15 +67,15 @@ texts = ["ostrich"]
 model_name = "ViT-B/16"
 
 methods = [
-	"selfattn",
-	"rollout",
-	"gradcam",
-	"game",
-	"maskclip",
-	"clipsurgery",
-	"m2ib",
-	"gradeclip_wo_ksim",
-	"gradeclip",
+    "selfattn",
+    "rollout",
+    "gradcam",
+    "game",
+    "maskclip",
+    "clipsurgery",
+    "m2ib",
+    "gradeclip_wo_ksim",
+    "gradeclip",
 ]
 
 for method_name in methods:
@@ -88,29 +88,29 @@ for method_name in methods:
         print(f"skip {method_name}: {exc}")
 ```
 
-    ## Batch processing (multiple images)
+## Batch processing (multiple images)
 
-    ```python
-    from pathlib import Path
-    from PIL import Image
-    from saliency import get_model, overlay_heatmap
+```python
+from pathlib import Path
+from PIL import Image
+from saliency import get_model, overlay_heatmap
 
-    image_paths = list(Path("test_imgs").glob("*.jpg"))
-    texts = ["dog", "cat", "car"]
+image_paths = list(Path("test_imgs").glob("*.jpg"))
+texts = ["dog", "cat", "car"]
 
-    method_name = "gradeclip"
-    model_name = "ViT-B/16"
-    runner = get_model(method_name, model_name=model_name)
+method_name = "gradeclip"
+model_name = "ViT-B/16"
+runner = get_model(method_name, model_name=model_name)
 
-    out_dir = Path("outputs/batch_demo")
-    out_dir.mkdir(parents=True, exist_ok=True)
+out_dir = Path("outputs/batch_demo")
+out_dir.mkdir(parents=True, exist_ok=True)
 
-    for image_path in image_paths:
-        image = Image.open(image_path).convert("RGB")
-        outputs = runner(image, texts)
-        processed = outputs["processed_image"]
+for image_path in image_paths:
+    image = Image.open(image_path).convert("RGB")
+    outputs = runner(image, texts)
+    processed = outputs["processed_image"]
 
-        for text, payload in outputs["results"].items():
+    for text, payload in outputs["results"].items():
         sal = payload["map"]
         sim = payload["similarity"]
         overlay = overlay_heatmap(processed, sal, channel="jet")
@@ -119,9 +119,9 @@ for method_name in methods:
         stem = image_path.stem
         overlay.save(out_dir / f"{stem}_{method_name}_{safe_text}.png")
         print(stem, text, f"sim={sim:.4f}")
-    ```
+```
 
-    Tip: if you have many images, keep one `runner` instance and reuse it as above to avoid repeated model setup.
+Tip: if you have many images, keep one `runner` instance and reuse it as above to avoid repeated model setup.
 
 ## Notes
 
