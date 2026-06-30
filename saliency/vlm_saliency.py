@@ -523,6 +523,51 @@ class GradECLIPSaliency(CLIPSaliencyBase):
         return maps
 
 
+class GradECLIPNoKSimSaliency(CLIPSaliencyBase):
+    def explain(self, image: Image.Image | str | Path, texts: Sequence[str]) -> Dict[str, np.ndarray]:
+        pil = self._load_image(image)
+        outputs, _, _, v, q_out, k_out, _, att_output, map_size = clip_encode_dense(imgprocess_keepsize(pil).to(self.device).unsqueeze(0))
+
+        text_tokens = clip.tokenize(list(texts)).to(self.device)
+        with torch.no_grad():
+            text_features = F.normalize(clipmodel.encode_text(text_tokens), dim=-1)
+        img_embedding = F.normalize(outputs[:, 0], dim=-1)
+        cosines = (img_embedding @ text_features.T)[0]
+
+        maps: Dict[str, np.ndarray] = {}
+        for i, text in enumerate(texts):
+            emap = grad_eclip(cosines[i], q_out, k_out, v, att_output, map_size, withksim=False)
+            maps[text] = _resize_to_image(emap, pil.size).detach().cpu().numpy()
+        return maps
+
+
+class GradCAMSaliency(CLIPSaliencyBase):
+    def explain(self, image: Image.Image | str | Path, texts: Sequence[str]) -> Dict[str, np.ndarray]:
+        pil = self._load_image(image)
+        outputs, _, last_input, _, _, _, _, _, map_size = clip_encode_dense(imgprocess_keepsize(pil).to(self.device).unsqueeze(0))
+
+        text_tokens = clip.tokenize(list(texts)).to(self.device)
+        with torch.no_grad():
+            text_features = F.normalize(clipmodel.encode_text(text_tokens), dim=-1)
+        img_embedding = F.normalize(outputs[:, 0], dim=-1)
+        cosines = (img_embedding @ text_features.T)[0]
+
+        maps: Dict[str, np.ndarray] = {}
+        for i, text in enumerate(texts):
+            emap = grad_cam(cosines[i], last_input, map_size)
+            maps[text] = _resize_to_image(emap, pil.size).detach().cpu().numpy()
+        return maps
+
+
+class SelfAttentionSaliency(CLIPSaliencyBase):
+    def explain(self, image: Image.Image | str | Path, texts: Sequence[str]) -> Dict[str, np.ndarray]:
+        pil = self._load_image(image)
+        _, _, _, _, _, _, attn, _, map_size = clip_encode_dense(imgprocess_keepsize(pil).to(self.device).unsqueeze(0))
+        emap = attn[0, :1, 1:].detach().reshape(*map_size)
+        emap = _resize_to_image(emap, pil.size).detach().cpu().numpy()
+        return {text: emap.copy() for text in texts}
+
+
 class MaskCLIPSaliency(CLIPSaliencyBase):
     def explain(self, image: Image.Image | str | Path, texts: Sequence[str]) -> Dict[str, np.ndarray]:
         pil = self._load_image(image)
@@ -550,15 +595,34 @@ class CLIPSurgerySaliency(CLIPSaliencyBase):
     def explain(self, image: Image.Image | str | Path, texts: Sequence[str]) -> Dict[str, np.ndarray]:
         pil = self._load_image(image)
         img_clip = preprocess(pil).to(self.device).unsqueeze(0)
-        sim_map = clip_surgery_map(surgery_model, img_clip, list(texts), self.device)
+
+        # Keep behavior close to Grad-ECLIP eval scripts: target text in front plus fixed distractors.
+        prompt_bank = [
+            "airplane", "bag", "bed", "bedclothes", "bench", "bicycle", "bird", "boat", "book", "bottle",
+            "building", "bus", "cabinet", "car", "cat", "ceiling", "chair", "cloth", "computer", "cow",
+            "cup", "curtain", "dog", "door", "fence", "floor", "flower", "food", "grass", "ground",
+            "horse", "keyboard", "light", "motorbike", "mountain", "mouse", "person", "plate", "platform",
+            "potted plant", "road", "rock", "sheep", "shelves", "sidewalk", "sign", "sky", "snow", "sofa",
+            "table", "track", "train", "tree", "truck", "tv monitor", "wall", "water", "window", "wood",
+        ]
+        texts_list = list(texts)
+        surgery_texts = texts_list + [p for p in prompt_bank if p not in set(texts_list)]
+
+        sim_map = clip_surgery_map(surgery_model, img_clip, surgery_texts, self.device)
+        text_to_idx = {t: i for i, t in enumerate(surgery_texts)}
 
         maps: Dict[str, np.ndarray] = {}
-        for i, text in enumerate(texts):
-            emap = sim_map[0, :, :, i]
-            emap = _resize_raw_to_image(emap, pil.size)
+        for text in texts_list:
+            emap_raw = sim_map[0, :, :, text_to_idx[text]]
+            emap = _resize_raw_to_image(emap_raw, pil.size)
             emap = _normalize_map_percentile(emap, q_low=0.01, q_high=0.99)
             emap = _smooth_map(emap, kernel_size=5)
             emap = _normalize_map(emap)
+
+            # Fallback when surgery output collapses to near-constant values.
+            if float((emap.max() - emap.min()).item()) < 1e-4:
+                emap = _normalize_map(_resize_raw_to_image(torch.abs(emap_raw), pil.size))
+
             maps[text] = emap.detach().cpu().numpy()
         return maps
 
@@ -604,10 +668,36 @@ class GAMESaliency(CLIPSaliencyBase):
         return maps
 
 
+class RolloutSaliency(CLIPSaliencyBase):
+    def __init__(self, model_name: str = "ViT-B/16", target_device: Optional[str] = None):
+        initialize_backends(model_name=model_name, target_device=target_device, load_game=True)
+        self.device = device
+
+    def explain(self, image: Image.Image | str | Path, texts: Sequence[str]) -> Dict[str, np.ndarray]:
+        _require_backend(mm_clip, "GAME", "Clone Transformer-MM-Explainability and expose Game_MM_CLIP on PYTHONPATH.")
+        pil = self._load_image(image)
+        img_clip = preprocess(pil).to(self.device).unsqueeze(0)
+        text_tokenized = mm_clip.tokenize(list(texts)).to(self.device)
+        attentions = mm_interpret(model=mm_clipmodel, image=img_clip, texts=text_tokenized, target_device=self.device, rollout=True)
+        relevance = compute_rollout_attention(attentions)
+
+        maps: Dict[str, np.ndarray] = {}
+        for i, text in enumerate(texts):
+            emap = _resize_to_image(relevance[i], pil.size)
+            maps[text] = emap.detach().cpu().numpy()
+        return maps
+
+
 SAL_METHODS = {
+    "selfattn": SelfAttentionSaliency,
+    "rollout": RolloutSaliency,
+    "gradcam": GradCAMSaliency,
+    "game": GAMESaliency,
     "gradeclip": GradECLIPSaliency,
+    "gradeclip_wo_ksim": GradECLIPNoKSimSaliency,
     "maskclip": MaskCLIPSaliency,
     "clipsurgery": CLIPSurgerySaliency,
+    "m2ib": M2IBSaliency,
 }
 
 
