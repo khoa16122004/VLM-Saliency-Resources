@@ -64,7 +64,7 @@ def get_dataloader(dataset_name, batch_size, transform):
         from dataloader import ImageNet
 
         # Allow overriding the ImageNet val directory from environment.
-        imagenet_val_dir = os.environ.get("IMAGENET_VAL_DIR", "./imagenet_val")
+        imagenet_val_dir = "/datastore/elo/quanphm/dataset/ImageNet1K/val"
         annotations_file = "./imgnet1k_label.json"
 
         dataset = ImageNet(
