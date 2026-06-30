@@ -75,6 +75,24 @@ class SaliencyMethodRunner:
             "results": results,
         }
 
+    def run_batch_pairs(
+        self,
+        images: Sequence[Image.Image | str | Path],
+        texts: Sequence[str],
+    ) -> list[Dict[str, Any]]:
+        """Run pairwise batch inference where len(images) == len(texts).
+
+        Each pair (images[i], texts[i]) is processed independently and returns
+        the same output structure as __call__, with one text key in `results`.
+        """
+        if len(images) != len(texts):
+            raise ValueError(f"Batch size mismatch: len(images)={len(images)} != len(texts)={len(texts)}")
+
+        outputs: list[Dict[str, Any]] = []
+        for image, text in zip(images, texts):
+            outputs.append(self(image, [text]))
+        return outputs
+
 
 def get_model(
     method_name: str,

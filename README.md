@@ -88,7 +88,7 @@ for method_name in methods:
         print(f"skip {method_name}: {exc}")
 ```
 
-## Batch processing (multiple images)
+## Batch mode A: many images, same text set per image
 
 ```python
 from pathlib import Path
@@ -122,6 +122,44 @@ for image_path in image_paths:
 ```
 
 Tip: if you have many images, keep one `runner` instance and reuse it as above to avoid repeated model setup.
+
+## Batch mode B: paired batch (len(images) == len(texts))
+
+Use this when each image has its own paired text prompt, for example:
+- image_0 with text_0
+- image_1 with text_1
+- image_2 with text_2
+
+```python
+from pathlib import Path
+from PIL import Image
+from saliency import get_model, overlay_heatmap
+
+image_paths = [
+    "test_imgs/ostrich.jpg",
+    "test_imgs/cat_dog_car.jpg",
+    "test_imgs/os.jpg",
+]
+images = [Image.open(p).convert("RGB") for p in image_paths]
+texts = ["ostrich", "car", "sky"]  # same length as images
+
+runner = get_model("gradeclip", model_name="ViT-B/16")
+batch_outputs = runner.run_batch_pairs(images, texts)
+
+out_dir = Path("outputs/batch_pairs_demo")
+out_dir.mkdir(parents=True, exist_ok=True)
+
+for i, out in enumerate(batch_outputs):
+    text = texts[i]
+    payload = out["results"][text]
+    sim = payload["similarity"]
+    sal = payload["map"]
+
+    overlay = overlay_heatmap(out["processed_image"], sal, channel="jet")
+    safe = "".join(c if c.isalnum() else "_" for c in text).strip("_")
+    overlay.save(out_dir / f"sample_{i}_{safe}.png")
+    print(i, text, f"sim={sim:.4f}")
+```
 
 ## Notes
 
