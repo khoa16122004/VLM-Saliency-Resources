@@ -121,8 +121,16 @@ def gradeclip_heatmap(image01: torch.Tensor, text_tokens: torch.Tensor, create_g
     logits = (k_patch * q_cls.unsqueeze(0)).sum(-1) / math.sqrt(cdim)
     lam = (logits - logits.min()) / (logits.max() - logits.min() + 1e-8)
 
-    o_cls = attn_output[0, 0, :]
-    w = torch.autograd.grad(score, o_cls, retain_graph=True, create_graph=create_graph)[0]
+    grad_attn = torch.autograd.grad(
+        score,
+        attn_output,
+        retain_graph=True,
+        create_graph=create_graph,
+        allow_unused=True,
+    )[0]
+    if grad_attn is None:
+        raise RuntimeError("Could not compute gradient dS/d(attn_output) for Grad-ECLIP heatmap.")
+    w = grad_attn[0, 0, :]
 
     token_h = F.relu((w.unsqueeze(0) * (lam.unsqueeze(-1) * v_patch)).sum(-1))
     h_patch = token_h.reshape(*map_size)
