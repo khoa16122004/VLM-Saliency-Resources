@@ -163,8 +163,7 @@ def attack_gradeclip_faithfulness(
     tau_soft: float = 10.0,
 ):
     l1, l2, l3, l4 = lambdas
-    with torch.no_grad():
-        s0, h0, _ = gradeclip_heatmap(i0, text_tokens, create_graph=False)
+    s0, h0, _ = gradeclip_heatmap(i0, text_tokens, create_graph=False)
     baseline = make_baseline(i0, mode=baseline_mode)
 
     delta = torch.zeros_like(i0, requires_grad=True)
@@ -219,8 +218,7 @@ def attack_gradeclip_faithfulness(
             )
 
     i_adv = (i0 + delta.detach()).clamp(0.0, 1.0)
-    with torch.no_grad():
-        s_adv, h_adv, _ = gradeclip_heatmap(i_adv, text_tokens, create_graph=False)
+    s_adv, h_adv, _ = gradeclip_heatmap(i_adv, text_tokens, create_graph=False)
     return i_adv, h0.detach(), h_adv.detach(), float(s0.item()), float(s_adv.item()), logs
 
 
