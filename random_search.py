@@ -5,6 +5,7 @@ from typing import Any, Dict, Tuple
 
 import numpy as np
 from PIL import Image
+from tqdm.auto import tqdm
 
 from saliency import get_model
 
@@ -100,6 +101,7 @@ def search_patch_es(
     sim_weight: float = 0.4,
     top_quantile: float = 0.80,
     seed: int = 0,
+    use_tqdm: bool = True,
     ) -> Dict[str, Any]:
     """1+1 ES to find an additive patch that attracts saliency while preserving similarity.
 
@@ -141,7 +143,11 @@ def search_patch_es(
     )
 
     history = []
-    for step in range(steps):
+    iterator = range(steps)
+    if use_tqdm:
+        iterator = tqdm(iterator, total=steps, desc="search_patch_es", leave=False)
+
+    for step in iterator:
         cand_patch = patch + rng.normal(0.0, sigma, size=patch.shape).astype(np.float32)
         cand_patch = np.clip(cand_patch, -0.5, 0.5)
 
@@ -187,9 +193,14 @@ def search_patch_es(
             }
         )
 
+        if use_tqdm:
+            iterator.set_postfix(score=f"{best['score']:.4f}", sim=f"{best['sim']:.4f}", refresh=False)
+
     y, x = pos
     return {
         "original_similarity": original_sim,
+        "original_image_resized": base_pil,
+        "original_saliency_map": base_sal,
         "best_similarity": float(best["sim"]),
         "similarity_drop": float(best["sim_drop"]),
         "attract_ratio": float(best["attract_ratio"]),

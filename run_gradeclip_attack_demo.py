@@ -104,6 +104,9 @@ def _normalize_map(hm: torch.Tensor, eps: float = 1e-8) -> torch.Tensor:
 
 
 def gradeclip_heatmap(image01: torch.Tensor, text_tokens: torch.Tensor, create_graph: bool = False):
+    if not image01.requires_grad:
+        image01 = image01.detach().clone().requires_grad_(True)
+
     img_out, q, k, v, attn_output, _, map_size = encode_image_dense(image01)
     image_features = F.normalize(img_out[:, 0], dim=-1)
     with torch.no_grad():
