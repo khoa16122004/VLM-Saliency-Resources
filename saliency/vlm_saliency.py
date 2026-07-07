@@ -306,7 +306,9 @@ def clip_encode_dense(x):
     clip_inres = clipmodel.visual.input_resolution
     clip_ksize = clipmodel.visual.conv1.kernel_size
 
-    x = x.half()
+    # Keep input on the exact device/dtype expected by CLIP visual stem.
+    conv1_weight = clipmodel.visual.conv1.weight
+    x = x.to(device=conv1_weight.device, dtype=conv1_weight.dtype)
     x = clipmodel.visual.conv1(x)
     feah, feaw = x.shape[-2:]
 
