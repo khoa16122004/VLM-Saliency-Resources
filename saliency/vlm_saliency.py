@@ -734,9 +734,5 @@ def main() -> None:
         overlay = overlay_heatmap(image, sal)
         overlay.save(output_dir / f"{stem}_{args.method}_{safe}.png")
 
-
-initialize_backends()
-
-
 if __name__ == "__main__":
     main()
