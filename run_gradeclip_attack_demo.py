@@ -16,8 +16,10 @@ CLIP_MEAN = torch.tensor([0.48145466, 0.4578275, 0.40821073]).view(1, 3, 1, 1)
 CLIP_STD = torch.tensor([0.26862954, 0.26130258, 0.27577711]).view(1, 3, 1, 1)
 
 
-def pil_to_tensor_01(image: Image.Image, size: int = 224) -> torch.Tensor:
-    image = image.convert("RGB").resize((size, size), Image.Resampling.BICUBIC)
+def pil_to_tensor_01(image: Image.Image, size: int | None = 224) -> torch.Tensor:
+    image = image.convert("RGB")
+    if size is not None:
+        image = image.resize((size, size), Image.Resampling.BICUBIC)
     arr = np.asarray(image, dtype=np.float32) / 255.0
     x = torch.from_numpy(arr).permute(2, 0, 1).unsqueeze(0)
     return x
@@ -241,8 +243,13 @@ def jet_colormap(hm: np.ndarray) -> np.ndarray:
     return np.stack([r, g, b], axis=-1)
 
 
-def save_heatmap_image(hm: torch.Tensor, out_path: Path) -> None:
-    hm_np = hm.detach().float().cpu().numpy()
+def save_heatmap_image(hm: torch.Tensor, out_path: Path, image_size: Tuple[int, int] | None = None) -> None:
+    hm_t = hm.detach().float()
+    if image_size is not None:
+        w, h = image_size
+        hm_t = F.interpolate(hm_t[None, None, ...], size=(h, w), mode="bilinear", align_corners=False)[0, 0]
+        hm_t = _normalize_map(hm_t)
+    hm_np = hm_t.cpu().numpy()
     hm_np = np.clip(hm_np, 0.0, 1.0)
     color = (jet_colormap(hm_np) * 255.0).astype(np.uint8)
     Image.fromarray(color, mode="RGB").save(out_path)
@@ -271,6 +278,7 @@ def main() -> None:
     parser.add_argument("--eps", type=float, default=8.0 / 255.0)
     parser.add_argument("--alpha", type=float, default=1.0 / 255.0)
     parser.add_argument("--iters", type=int, default=80)
+    parser.add_argument("--attack_size", type=int, default=224)
     parser.add_argument("--k_ratio", type=float, default=0.2)
     parser.add_argument("--baseline_mode", type=str, default="mean", choices=["mean", "black", "blur"])
     args = parser.parse_args()
@@ -284,7 +292,7 @@ def main() -> None:
     dev = next(vlm.clipmodel.parameters()).device
 
     image = Image.open(args.image).convert("RGB")
-    i0 = pil_to_tensor_01(image, size=224).to(dev)
+    i0 = pil_to_tensor_01(image, size=args.attack_size).to(dev)
     text_tokens = clip.tokenize([args.text]).to(dev)
 
     i_adv, h0, h_adv, s0, s_adv, logs = attack_gradeclip_faithfulness(
@@ -306,10 +314,12 @@ def main() -> None:
     hmadv_path = out_dir / "heatmap_adversarial.png"
     log_path = out_dir / "attack_log.csv"
 
-    tensor_01_to_pil(i0).save(orig_path)
-    tensor_01_to_pil(i_adv).save(adv_path)
-    save_heatmap_image(h0, hm0_path)
-    save_heatmap_image(h_adv, hmadv_path)
+    # Save visual outputs at original image size for easy inspection.
+    image.save(orig_path)
+    adv_vis = tensor_01_to_pil(i_adv).resize(image.size, Image.Resampling.BICUBIC)
+    adv_vis.save(adv_path)
+    save_heatmap_image(h0, hm0_path, image_size=image.size)
+    save_heatmap_image(h_adv, hmadv_path, image_size=image.size)
     save_logs(logs, log_path, s0=s0, s_adv=s_adv)
 
     print(f"Saved original image: {orig_path}")
